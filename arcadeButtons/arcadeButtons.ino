@@ -23,6 +23,7 @@ int Frequencies_One[7]; int Frequencies_Two[7];
 int i; int j; int k; int l; int m; int n;
 int avgFreq[7];
 int maxFreq;
+int fadeOffRate = 1.25; //defined for now, could be replaced by pot
 
 uint32_t colorDict[LED_COUNT];
 
@@ -45,7 +46,7 @@ void setup() {
   delay(5);
 
   //buttons
-  Serial.begin(9600);
+  Serial.begin(19200);
   pinMode(buttonPin, INPUT);
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
@@ -57,22 +58,22 @@ void setup() {
 
 
   // assign LED colors:
-  for(m=0; m<strip.numPixels(); m++) { // For each pixel in strip...
-      // Offset pixel hue by an amount to make one full revolution of the
-      // color wheel (range of 65536) along the length of the strip
-      // (strip.numPixels() steps):
-      int pixelHue =  (m * 65536L / strip.numPixels());
-      // strip.ColorHSV() can take 1 or 3 arguments: a hue (0 to 65535) or
-      // optionally add saturation and value (brightness) (each 0 to 255).
-      // Here we're using just the single-argument hue variant. The result
-      // is passed through strip.gamma32() to provide 'truer' colors
-      // before assigning to each pixel:
-      colorDict[m] = strip.gamma32(strip.ColorHSV(pixelHue));
-     }
+  for (m = 0; m < strip.numPixels(); m++) { // For each pixel in strip...
+    // Offset pixel hue by an amount to make one full revolution of the
+    // color wheel (range of 65536) along the length of the strip
+    // (strip.numPixels() steps):
+    int pixelHue =  (m * 65536L / strip.numPixels());
+    // strip.ColorHSV() can take 1 or 3 arguments: a hue (0 to 65535) or
+    // optionally add saturation and value (brightness) (each 0 to 255).
+    // Here we're using just the single-argument hue variant. The result
+    // is passed through strip.gamma32() to provide 'truer' colors
+    // before assigning to each pixel:
+    colorDict[m] = strip.gamma32(strip.ColorHSV(pixelHue));
+  }
 }
 
 void loop() {
-  strip.clear();
+  // strip.clear();
   // put your main code here, to run repeatedly:
   buttonState = digitalRead(buttonPin);
   if (buttonState == LOW && previousState != LOW) {
@@ -95,7 +96,23 @@ void loop() {
       kMax = k;
     }
   }
-  for (n = (kMax* LED_chunk); n < ((kMax*LED_chunk) + LED_chunk); n++){
+
+  // Fade off function?
+  uint32_t prevColor;
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    prevColor = strip.getPixelColor(i);
+    Serial.println(prevColor);
+    if (prevColor != 0) {
+      uint8_t red = prevColor >> 16; // red
+      uint8_t green = prevColor >> 8; //green
+      uint8_t blue = prevColor; // blue
+      red = red/fadeOffRate;
+      green = green/fadeOffRate;
+      blue = blue/fadeOffRate;
+      strip.setPixelColor(i, strip.gamma32(strip.Color(red, green, blue)));
+    }
+  }
+  for (n = (kMax * LED_chunk); n < ((kMax * LED_chunk) + LED_chunk); n++) {
     strip.setPixelColor(n, colorDict[n]);
   }
   strip.show();
