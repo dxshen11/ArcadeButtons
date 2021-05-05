@@ -1,121 +1,103 @@
 #include <Adafruit_NeoPixel.h>
+#include <Keyboard.h>
 
-// How many NeoPixels are attached to the Arduino?
-#define LED_COUNT 49
+// LED globals
+#define LED_STRIP_PIN 6
+#define LED_CHUNK 5 // number of LEDs in 1 chunk
+#define FADE_RESIST A6
 
-// LED definitions
-#define LED_PIN 6
-
-// constant pin definitions
-const int buttonPin = 13;
-const int ledPin = 12;
-const int stripPin = 2;
 const int STROBE = 4;
 const int RESET = 5;
 const int DC_One = A0;
 const int DC_Two = A1;
-const int LED_chunk = 5; //How many LEDS are in 1 chunck?
 
-int buttonState = 0;
-int previousState = HIGH;
 int freq_amp;
-int Frequencies_One[7]; int Frequencies_Two[7];
-int i; int j; int k; int l; int m; int n;
+int freqsOne[7];
+int freqsTwo[7];
 int avgFreq[7];
 int maxFreq;
-int fadeOffRate = 1.25; //defined for now, could be replaced by pot
+double fadeRate; // dictated by pot
 
+const int NUM_CHANNELS = 7;
+const int LED_COUNT = NUM_CHANNELS * LED_CHUNK;
 uint32_t colorDict[LED_COUNT];
 
 // Declare our NeoPixel strip object:
-Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(LED_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 // Argument 1 = Number of pixels in NeoPixel strip
 // Argument 2 = Arduino pin number (most are valid)
-// Argument 3 = Pixel type flags, add together as needed:
+// Argument 3 = Pixel type flags, add together as needed
+
+// button globals
+#define LEFT 7 // joystick controls
+#define RIGHT 8
+#define UP 9
+#define DOWN 10
+
+const int BUT_PIN = 13;
+const int LED_BUT_PIN = 12;
+
+int buttonState = 0;
+int previousState = HIGH;
+String previousDirection; 
 
 void setup() {
-  // put your setup code here, to run once:
   pinMode(STROBE, OUTPUT);
   pinMode(RESET, OUTPUT);
   pinMode(DC_One, INPUT);
   pinMode(DC_Two, INPUT);
 
-  //Initialize Spectrum Analyzers
+  // Initialize Spectrum Analyzers
   digitalWrite(STROBE, LOW);
   digitalWrite(RESET, LOW);
   delay(5);
 
-  //buttons
-  Serial.begin(19200);
-  pinMode(buttonPin, INPUT);
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
+  // set up buttons
+  pinMode(BUT_PIN, INPUT_PULLUP);
+  pinMode(LED_BUT_PIN, OUTPUT);
+  pinMode(LEFT, INPUT_PULLUP);
+  pinMode(RIGHT, INPUT_PULLUP);
+  pinMode(UP, INPUT_PULLUP);
+  pinMode(DOWN, INPUT_PULLUP);
+  digitalWrite(LED_BUT_PIN, HIGH);
 
-  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
+  // initialize LED strip
+  pinMode(FADE_RESIST, INPUT);
+  strip.begin();
   strip.clear();
   strip.show();            // Turn OFF all pixels ASAP
   strip.setBrightness(50); // Set BRIGHTNESS to about 1/5 (max = 255)
 
 
-  // assign LED colors:
-  for (m = 0; m < strip.numPixels(); m++) { // For each pixel in strip...
-    // Offset pixel hue by an amount to make one full revolution of the
-    // color wheel (range of 65536) along the length of the strip
-    // (strip.numPixels() steps):
-    int pixelHue =  (m * 65536L / strip.numPixels());
-    // strip.ColorHSV() can take 1 or 3 arguments: a hue (0 to 65535) or
-    // optionally add saturation and value (brightness) (each 0 to 255).
-    // Here we're using just the single-argument hue variant. The result
-    // is passed through strip.gamma32() to provide 'truer' colors
-    // before assigning to each pixel:
-    colorDict[m] = strip.gamma32(strip.ColorHSV(pixelHue));
+  // assign strip pixel colors such that the length of the strip
+  // makes one full revolution of the color wheel (range of 6536)
+  for (int i = 0; i < strip.numPixels(); i++) {
+    int pixelHue =  (i * 65536L / strip.numPixels());
+    colorDict[i] = strip.gamma32(strip.ColorHSV(pixelHue));
   }
+
+  Keyboard.begin();
+  Serial.begin(19200);
 }
 
-void loop() {
-  // strip.clear();
-  // put your main code here, to run repeatedly:
-  buttonState = digitalRead(buttonPin);
-  if (buttonState == LOW && previousState != LOW) {
-    Serial.print("Pressed.");
+void Graph_Frequencies() {
+  for (int i = 0; i < NUM_CHANNELS; i++)
+  {
+    //    Serial.print(freqsOne[i]);
+    //    Serial.print(" ");
+    //    Serial.print(freqsTwo[i]);
+    //    Serial.print(" ");
+    Serial.print( (freqsOne[i] + freqsTwo[i]) / 2 );
+    Serial.print("    ");
   }
-  previousState = buttonState;
-  Read_Frequencies();
-  // Graph_Frequencies();
-  delay(50);
+  Serial.println();
+}
 
-  // process audio
-  for (j = 0; j < 7; j++) {
-    avgFreq[j] = (Frequencies_One[j] + Frequencies_Two[j]) / 2;
-  }
-  double avgMax = 0;
-  int kMax;
-  for (k = 0; k < 7; k++) {
-    if (avgFreq[k] > avgMax) {
-      avgMax = avgFreq[k];
-      kMax = k;
-    }
-  }
-
-  // Fade off function?
-  uint32_t prevColor;
-  for (uint16_t i = 0; i < strip.numPixels(); i++) {
-    prevColor = strip.getPixelColor(i);
-    Serial.println(prevColor);
-    if (prevColor != 0) {
-      uint8_t red = prevColor >> 16; // red
-      uint8_t green = prevColor >> 8; //green
-      uint8_t blue = prevColor; // blue
-      red = red/fadeOffRate;
-      green = green/fadeOffRate;
-      blue = blue/fadeOffRate;
-      strip.setPixelColor(i, strip.gamma32(strip.Color(red, green, blue)));
-    }
-  }
-  for (n = (kMax * LED_chunk); n < ((kMax * LED_chunk) + LED_chunk); n++) {
-    strip.setPixelColor(n, colorDict[n]);
-  }
-  strip.show();
+double map_floats(int value, int input_low, double input_high, int output_low, double output_high) {
+  double mappedValue = output_high - value / ((input_high - input_low) / (output_high - output_low));
+  if (mappedValue < 1)
+    return 1;
+  return (mappedValue);
 }
 
 void Read_Frequencies() {
@@ -125,27 +107,111 @@ void Read_Frequencies() {
   delayMicroseconds(200);
 
   //Read frequencies for each band
-  for (freq_amp = 0; freq_amp < 7; freq_amp++)
+  for (int i = 0; i < NUM_CHANNELS; i++)
   {
     digitalWrite(STROBE, HIGH);
     delayMicroseconds(50);
     digitalWrite(STROBE, LOW);
     delayMicroseconds(50);
 
-    Frequencies_One[freq_amp] = analogRead(DC_One);
-    Frequencies_Two[freq_amp] = analogRead(DC_Two);
+    freqsOne[i] = analogRead(DC_One);
+    freqsTwo[i] = analogRead(DC_Two);
   }
 }
 
-void Graph_Frequencies() {
-  for (i = 0; i < 7; i++)
-  {
-    //    Serial.print(Frequencies_One[i]);
-    //    Serial.print(" ");
-    //    Serial.print(Frequencies_Two[i]);
-    //    Serial.print(" ");
-    Serial.print( (Frequencies_One[i] + Frequencies_Two[i]) / 2 );
-    Serial.print("    ");
+String checkDirection() {
+  // joystick press
+  String directionPressed = "";
+  bool leftStickState = !digitalRead(LEFT);
+  bool rightStickState = !digitalRead(RIGHT);
+  bool upStickState = !digitalRead(UP);
+  bool downStickState = !digitalRead(DOWN);
+  if (leftStickState){
+    directionPressed += "l";
   }
-  Serial.println();
+  if (rightStickState){
+    directionPressed += "r";
+  }
+  if (upStickState){
+    directionPressed += "u";
+  }
+  if (downStickState){
+    directionPressed += "d";
+  }
+  return (directionPressed);
+}
+
+void loop() {
+  // check potentiometer state
+  fadeRate = map_floats(analogRead(FADE_RESIST), 0, 1023, 0.5, 10);
+  Serial.println(fadeRate);
+
+  // check button press
+  buttonState = digitalRead(BUT_PIN);
+  if (buttonState == LOW && previousState != LOW) {
+    //Keyboard.write('k');
+    //    Keyboard.press('n');
+    //    delay(100);
+    //    Keyboard.releaseAll();
+    Keyboard.write('k');
+    // Keyboard.println("keeb");
+    Serial.println("Pressed.");
+  }
+  previousState = buttonState;
+
+  // joystick movement
+  if ((checkDirection().indexOf("l") != -1) && (previousDirection.indexOf("l") == -1)){
+    Keyboard.write(KEY_LEFT_ARROW);
+  }
+  if ((checkDirection().indexOf("r") != -1) && (previousDirection.indexOf("r") == -1)){
+    Keyboard.write(KEY_RIGHT_ARROW);
+  }
+  if ((checkDirection().indexOf("u") != -1) && (previousDirection.indexOf("u") == -1)){
+    Keyboard.write(KEY_UP_ARROW);
+  }
+  if ((checkDirection().indexOf("d") != -1) && (previousDirection.indexOf("d") == -1)){
+    Keyboard.write(KEY_DOWN_ARROW);
+  }
+  previousDirection = checkDirection();
+  
+  // detect audio
+  Read_Frequencies();
+  delay(50);
+
+  // find max avg frequency band
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    avgFreq[i] = (freqsOne[i] + freqsTwo[i]) / 2;
+  }
+  double avgMax = 0;
+  int idxMax;
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    if (avgFreq[i] > avgMax) {
+      avgMax = avgFreq[i];
+      idxMax = i;
+    }
+  }
+
+  // fade all pixels with color
+  uint32_t prevColor;
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    prevColor = strip.getPixelColor(i);
+//    Serial.println(prevColor);
+    if (prevColor != 0) {
+      // unpack RGB from uint32_t color
+      uint8_t red = prevColor >> 16;
+      uint8_t green = prevColor >> 8;
+      uint8_t blue = prevColor;
+      red = red / fadeRate;
+      green = green / fadeRate;
+      blue = blue / fadeRate;
+      strip.setPixelColor(i, strip.gamma32(strip.Color(red, green, blue)));
+    }
+  }
+
+  // set color of max frequency band
+  for (int i = (idxMax * LED_CHUNK); i < ((idxMax + 1)* LED_CHUNK); i++) {
+    strip.setPixelColor(i, colorDict[i]);
+  }
+
+  strip.show();
 }
